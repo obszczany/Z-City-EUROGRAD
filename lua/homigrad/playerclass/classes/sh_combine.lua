@@ -74,8 +74,8 @@ end)
 
 local primary_weapons = {
     "weapon_osipr",
-    "weapon_mp7",
-    "weapon_mp7"
+    "weapon_hla_gruntsmg",
+    "weapon_hla_gruntsmg"
 }
 
 --;; Реврайт сабклассов (бай дека)
@@ -173,7 +173,7 @@ local combine_subclasses = {
                 count = 1
             },
             {
-                weapon = "weapon_spas12",
+                weapon = "weapon_hla_wallhshot",
                 ammo_mult = 3
             }
         }

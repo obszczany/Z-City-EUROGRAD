@@ -333,7 +333,7 @@ if SERVER then
 
 					local owner = self:GetOwner()
 					if owner.Karma then
-						--owner.Karma = math.Clamp(owner.Karma + 0.25,0,zb.MaxKarma)
+						owner.Karma = math.Clamp(owner.Karma + 0.25,0,zb.MaxKarma)
 					end
 					ent.bandaged_limbs = ent.bandaged_limbs or {}
 					local bone_name = org.wounds[1][4]
@@ -486,7 +486,7 @@ if SERVER then
 						self:PoisonKCNOrganism(org)
 					end
 					
-					MODE.NetworkChemicalResistanceOfPlayer(organism_owner)
+					NetworkChemicalResistanceOfPlayer(organism_owner)
 					
 					organism_owner.PassiveAbility_ChemicalAccumulation_NextNetworkTime = CurTime() + 1
 				end
