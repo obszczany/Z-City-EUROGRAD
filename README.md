@@ -1,28 +1,27 @@
-# Z-City
+# This project is shared under a GNU AGPL-3 license. Head over to the "License" page for more information
+# Z-CITY EUROGRAD
 Z-City is a GMod addon which modifies character damage and controls. Z-City also comes with its own weapon base and a gamemode
 
-https://github.com/uzelezz123/8bit_zcity - 8bit module (compiled version is in lua/bin)
+## Support Z-City
+**Donation links:**
+- [Yoomoney](https://yoomoney.ru/fundraise/17GFEQH326Q.250101) 
+
+@@ -25,4 +29,22 @@ A.Bcc -> 1.000
+- BTC(BTC): bc1qa8pk9ag6xa5yav2mvlxkra8xk25lg3htgfqh5w
+- ETH(ERC20)* 0x72AdCCcCEB4E323C64bCF0955A779DD9298E9483
+
+## Other information 
+- https://steamcommunity.com/sharedfiles/filedetails/?id=3657285193 - Steam Workshop link (stable version)
+- https://github.com/uzelezz123/8bit_zcity - 8bit module (compiled version is in lua/bin)
 
 Optional Discord RPC module for clients:
-1. https://github.com/YuRaNnNzZZ/gmcl_steamrichpresencer/releases/tag/2023.07.20
-2. https://github.com/fluffy-servers/gmod-discord-rpc/releases/tag/1.2.1
+1. https://github.com/YuRaNnNzZZ/gmcl_steamrichpresencer/releases/tag/2023.07.20 - Steam Rich Presence
+2. https://github.com/fluffy-servers/gmod-discord-rpc/releases/tag/1.2.1 - Discord Rich Presence
 
-The current version in the repository is 1.4.1 EU
 
-## The numbers in the version number indicate:
+## Current version in the repository is 1.4.1 EU
+### The numbers in the version number indicate:
 A.Bcc -> 1.000
 - A -> Global updates
 - B -> New mechanics, gameplay changes
 - c -> Fixes and other small things
-
-## Support us
-**Donation links:**
-- [Yoomoney](https://yoomoney.ru/fundraise/17GFEQH326Q.250101) 
-- [Boosty](https://boosty.to/sadsalat/donate)
-
-**Crypto**
-- USDT(TRC20): TYgpaZgHQr6qEgemhHzVvV7AQESiyhHpZD
-- BTC(BTC): bc1qa8pk9ag6xa5yav2mvlxkra8xk25lg3htgfqh5w
-- ETH(ERC20)* 0x72AdCCcCEB4E323C64bCF0955A779DD9298E9483
-
-test
