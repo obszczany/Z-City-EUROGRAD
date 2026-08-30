@@ -110,9 +110,103 @@ local function IsLookingAt(ply, targetVec)
     return ply:GetAimVector():Dot(diff) / diff:Length() >= 0.8
 end
 
-local function karmaResetValue()
+local function karmaResetValue(targetPly)
+    if IsValid(targetPly) then
+        return karmaGetMaxForPlayer(targetPly)
+    end
     return zb.MaxKarma or 150
 end
+
+local KARMA_CFG_PATH = "zcity/karma_config.json"
+
+local function saveKarmaConfig()
+    local data = {
+        MaxKarma = zb.MaxKarma or 150,
+        GroupMaxKarma = zb.GroupMaxKarma or {},
+        PlayerMaxKarma = zb.PlayerMaxKarma or {}
+    }
+    if not file.IsDir("zcity", "DATA") then
+        file.CreateDir("zcity")
+    end
+    file.Write(KARMA_CFG_PATH, util.TableToJSON(data, true))
+end
+
+local function loadKarmaConfig()
+    if file.Exists(KARMA_CFG_PATH, "DATA") then
+        local raw = file.Read(KARMA_CFG_PATH, "DATA")
+        if raw and raw ~= "" then
+            local ok, data = pcall(util.JSONToTable, raw)
+            if ok and istable(data) then
+                if data.MaxKarma then zb.MaxKarma = tonumber(data.MaxKarma) or zb.MaxKarma end
+                if istable(data.GroupMaxKarma) then
+                    zb.GroupMaxKarma = {}
+                    for g, v in pairs(data.GroupMaxKarma) do
+                        zb.GroupMaxKarma[tostring(g)] = tonumber(v)
+                    end
+                end
+                if istable(data.PlayerMaxKarma) then
+                    zb.PlayerMaxKarma = {}
+                    for s, v in pairs(data.PlayerMaxKarma) do
+                        zb.PlayerMaxKarma[tostring(s)] = tonumber(v)
+                    end
+                end
+            end
+        end
+    end
+end
+
+loadKarmaConfig()
+
+util.AddNetworkString("hg_admin_karma_settings")
+local function broadcastKarmaCfgToAdmins()
+    for _, p in ipairs(player.GetHumans()) do
+        if IsValid(p) and p:IsAdmin() then
+            net.Start("hg_admin_karma_settings")
+                net.WriteString("sync")
+                net.WriteFloat(tonumber(zb.MaxKarma) or 150)
+                local grps = zb.GroupMaxKarma or {}
+                local keys = table.GetKeys(grps)
+                net.WriteUInt(#keys, 16)
+                for _, g in ipairs(keys) do
+                    net.WriteString(tostring(g))
+                    net.WriteFloat(tonumber(grps[g]) or 150)
+                end
+                local pls = zb.PlayerMaxKarma or {}
+                local pkeys = table.GetKeys(pls)
+                net.WriteUInt(#pkeys, 16)
+                for _, s in ipairs(pkeys) do
+                    net.WriteString(tostring(s))
+                    net.WriteFloat(tonumber(pls[s]) or 150)
+                end
+            net.Send(p)
+        end
+    end
+end
+
+hook.Add("PlayerInitialSpawn", "SyncKarmaCfgToClient", function(ply)
+    timer.Simple(2, function()
+        if IsValid(ply) and ply:IsAdmin() then
+            net.Start("hg_admin_karma_settings")
+                net.WriteString("sync")
+                net.WriteFloat(tonumber(zb.MaxKarma) or 150)
+                local grps = zb.GroupMaxKarma or {}
+                local keys = table.GetKeys(grps)
+                net.WriteUInt(#keys, 16)
+                for _, g in ipairs(keys) do
+                    net.WriteString(tostring(g))
+                    net.WriteFloat(tonumber(grps[g]) or 150)
+                end
+                local pls = zb.PlayerMaxKarma or {}
+                local pkeys = table.GetKeys(pls)
+                net.WriteUInt(#pkeys, 16)
+                for _, s in ipairs(pkeys) do
+                    net.WriteString(tostring(s))
+                    net.WriteFloat(tonumber(pls[s]) or 150)
+                end
+            net.Send(ply)
+        end
+    end)
+end)
 
 local function karmaActorName(ply)
     return IsValid(ply) and ply:Nick() or "Console"
@@ -238,7 +332,7 @@ hook.Add("HomigradDamage", "GuiltReg", function(ply, dmgInfo, hitgroup, ent, har
     
     local guiltadd = amt * 60
     Attacker.Guilt = (Attacker.Guilt or 0) + guiltadd
-    Attacker.Karma = math.Clamp((Attacker.Karma or 100) - add * math.max(((1 - (zb.GuiltTable[Victim][Attacker] or 0)) / 1),0), -60, zb.MaxKarma)
+    Attacker.Karma = math.Clamp((Attacker.Karma or 100) - add * math.max(((1 - (zb.GuiltTable[Victim][Attacker] or 0)) / 1),0), -60, karmaGetMaxForPlayer(Attacker))
 
     zb.HarmDoneKarma[Victim][Attacker] = zb.HarmDoneKarma[Victim][Attacker] + add
 
@@ -320,7 +414,7 @@ hook.Add("Player Think", "karmagain", function(ply)
     if (ply.KarmaGainThink or 0) > CurTime() then return end
     ply.KarmaGainThink = CurTime() + 120
 
-    ply.Karma = math.Clamp(ply.Karma + (ply.Karma > 100 and 0.1 or (ply.KarmaGain or 0.75)), 0, zb.MaxKarma)// * (1 + ply:HasPurchase("zpremium")), 0, zb.MaxKarma)
+    ply.Karma = math.Clamp(ply.Karma + (ply.Karma > 100 and 0.1 or (ply.KarmaGain or 0.75)), 0, karmaGetMaxForPlayer(ply))
     
     ply:SetNetVar("Karma", ply.Karma)
     //ply:guilt_SetValue( ply.Karma or 100 )
@@ -349,7 +443,7 @@ hook.Add("Org Think", "Its_Karma_Bro",function(owner, org, timeValue)
     local ply = owner
     
     if (ply.Karma or 100) < 50 then
-        if ((math.random(math.Clamp((ply.Karma or 100),20,zb.MaxKarma) * 300) == 1 or org.start_shaking)) then
+        if ((math.random(math.Clamp((ply.Karma or 100),20,karmaGetMaxForPlayer(ply)) * 300) == 1 or org.start_shaking)) then
             hg.StunPlayer(ply)
             local time = 15
             
@@ -488,8 +582,8 @@ concommand.Add("hg_setkarma", function(ply, cmd, args)
         return
     end
 
-    local karma = tonumber(args[2] or karmaResetValue())
-    karma = math.Clamp(karma, -60, zb.MaxKarma)
+    local karma = tonumber(args[2] or karmaResetValue(target))
+    karma = math.Clamp(karma, -60, karmaGetMaxForPlayer(target))
 
     target.Karma = karma
     target:SetNetVar("Karma", karma)
@@ -501,15 +595,15 @@ end)
 
 concommand.Add("hg_resetkarma", function(ply, cmd, args)
     if IsValid(ply) and not ply:IsAdmin() then return end
-    local resetValue = karmaResetValue()
     
     if args[1] == "*" or args[1] == "all" then
         for _, p in player.Iterator() do
+            local resetValue = karmaResetValue(p)
             p.Karma = resetValue
             p:SetNetVar("Karma", resetValue)
             p:guilt_SetValue(resetValue)
         end
-        local msg = karmaActorName(ply) .. " reset karma for ALL players to " .. resetValue
+        local msg = karmaActorName(ply) .. " reset karma for ALL players (to each group's maximum)"
         karmaBroadcast(msg)
         return
     end
@@ -525,6 +619,7 @@ concommand.Add("hg_resetkarma", function(ply, cmd, args)
         return
     end
 
+    local resetValue = karmaResetValue(target)
     target.Karma = resetValue
     target:SetNetVar("Karma", resetValue)
     target:guilt_SetValue(resetValue)
@@ -549,8 +644,8 @@ if COMMANDS then
         local target, err = resolveTarget(args[1])
         if not IsValid(target) then ply:ChatPrint(err or "Player not found.") return end
 
-        local karma = tonumber(args[2] or karmaResetValue())
-        karma = math.Clamp(karma, -60, zb.MaxKarma)
+        local karma = tonumber(args[2] or karmaResetValue(target))
+        karma = math.Clamp(karma, -60, karmaGetMaxForPlayer(target))
 
         target.Karma = karma
         target:SetNetVar("Karma", karma)
@@ -563,15 +658,15 @@ if COMMANDS then
     COMMANDS.hg_resetkarma = {function(ply, args)
         if not IsValid(ply) or not ply:IsAdmin() then return end
 
-        local resetValue = karmaResetValue()
         local arg = args[1]
         if arg == "*" or arg == "all" then
             for _, p in player.Iterator() do
+                local resetValue = karmaResetValue(p)
                 p.Karma = resetValue
                 p:SetNetVar("Karma", resetValue)
                 p:guilt_SetValue(resetValue)
             end
-            local msg = karmaActorName(ply) .. " reset karma for ALL players to " .. resetValue
+            local msg = karmaActorName(ply) .. " reset karma for ALL players (to each group's maximum)"
             karmaBroadcast(msg)
             return
         end
@@ -579,6 +674,7 @@ if COMMANDS then
         local target, err = resolveTarget(arg)
         if not IsValid(target) then ply:ChatPrint(err or "Player not found.") return end
 
+        local resetValue = karmaResetValue(target)
         target.Karma = resetValue
         target:SetNetVar("Karma", resetValue)
         target:guilt_SetValue(resetValue)
@@ -605,59 +701,173 @@ net.Receive("hg_admin_karma", function(len, ply)
     local action = net.ReadString()
     if action == "toggle" then
         zb.KarmaDisabled = not zb.KarmaDisabled
+        local silent = net.ReadBool()
         local msg = karmaActorName(ply) .. " " .. (zb.KarmaDisabled and "DISABLED" or "ENABLED") .. " the karma system globally."
-        karmaBroadcast(msg)
+        if silent then
+            ply:ChatPrint("[Karma] " .. msg)
+        else
+            karmaBroadcast(msg)
+        end
         return
     end
 
     if action == "set" then
         local isAll = net.ReadBool()
         local value = net.ReadFloat()
-        value = math.Clamp(value, -60, zb.MaxKarma)
+        local silent
 
         if isAll then
+            silent = net.ReadBool()
             for _, p in player.Iterator() do
-                p.Karma = value
-                p:SetNetVar("Karma", value)
-                p:guilt_SetValue(value)
+                local v = math.Clamp(value, -60, karmaGetMaxForPlayer(p))
+                p.Karma = v
+                p:SetNetVar("Karma", v)
+                p:guilt_SetValue(v)
             end
-            local msg = karmaActorName(ply) .. " set karma for ALL players to " .. value
-            karmaBroadcast(msg)
+            local msg = karmaActorName(ply) .. " set karma for ALL players to " .. value .. " (clamped per group max)"
+            if silent then
+                ply:ChatPrint("[Karma] " .. msg)
+            else
+                karmaBroadcast(msg)
+            end
             return
         end
 
         local target = net.ReadEntity()
+        silent = net.ReadBool()
         if not IsValid(target) or not target:IsPlayer() then return end
+        value = math.Clamp(value, -60, karmaGetMaxForPlayer(target))
         target.Karma = value
         target:SetNetVar("Karma", value)
         target:guilt_SetValue(value)
         local msg = karmaActorName(ply) .. " set karma for " .. target:Nick() .. " to " .. value
-        karmaBroadcast(msg)
+        if silent then
+            ply:ChatPrint("[Karma] " .. msg)
+        else
+            karmaBroadcast(msg)
+        end
         return
     end
 
     if action == "reset" then
         local isAll = net.ReadBool()
-        local value = karmaResetValue()
+        local silent
 
         if isAll then
+            silent = net.ReadBool()
             for _, p in player.Iterator() do
-                p.Karma = value
-                p:SetNetVar("Karma", value)
-                p:guilt_SetValue(value)
+                local resetValue = karmaResetValue(p)
+                p.Karma = resetValue
+                p:SetNetVar("Karma", resetValue)
+                p:guilt_SetValue(resetValue)
             end
-            local msg = karmaActorName(ply) .. " reset karma for ALL players to " .. value
-            karmaBroadcast(msg)
+            local msg = karmaActorName(ply) .. " reset karma for ALL players (to each group's maximum)"
+            if silent then
+                ply:ChatPrint("[Karma] " .. msg)
+            else
+                karmaBroadcast(msg)
+            end
             return
         end
 
         local target = net.ReadEntity()
+        silent = net.ReadBool()
         if not IsValid(target) or not target:IsPlayer() then return end
+        local value = karmaResetValue(target)
         target.Karma = value
         target:SetNetVar("Karma", value)
         target:guilt_SetValue(value)
         local msg = karmaActorName(ply) .. " reset karma for " .. target:Nick() .. " to " .. value
-        karmaBroadcast(msg)
+        if silent then
+            ply:ChatPrint("[Karma] " .. msg)
+        else
+            karmaBroadcast(msg)
+        end
+        return
+    end
+end)
+
+local function broadcastKarmaCfgToAdmins()
+    for _, p in ipairs(player.GetHumans()) do
+        if IsValid(p) and p:IsAdmin() then
+            net.Start("hg_admin_karma_settings")
+                net.WriteString("sync")
+                net.WriteFloat(tonumber(zb.MaxKarma) or 150)
+                local grps = zb.GroupMaxKarma or {}
+                local keys = table.GetKeys(grps)
+                net.WriteUInt(#keys, 8)
+                for _, g in ipairs(keys) do
+                    net.WriteString(tostring(g))
+                    net.WriteFloat(tonumber(grps[g]) or 150)
+                end
+            net.Send(p)
+        end
+    end
+end
+
+net.Receive("hg_admin_karma_settings", function(len, ply)
+    if not IsValid(ply) or not ply:IsAdmin() then return end
+    local action = net.ReadString()
+
+    if action == "request" then
+        net.Start("hg_admin_karma_settings")
+            net.WriteString("sync")
+            net.WriteFloat(tonumber(zb.MaxKarma) or 150)
+            local grps = zb.GroupMaxKarma or {}
+            local keys = table.GetKeys(grps)
+            net.WriteUInt(#keys, 16)
+            for _, g in ipairs(keys) do
+                net.WriteString(tostring(g))
+                net.WriteFloat(tonumber(grps[g]) or 150)
+            end
+            local pls = zb.PlayerMaxKarma or {}
+            local pkeys = table.GetKeys(pls)
+            net.WriteUInt(#pkeys, 16)
+            for _, s in ipairs(pkeys) do
+                net.WriteString(tostring(s))
+                net.WriteFloat(tonumber(pls[s]) or 150)
+            end
+        net.Send(ply)
+        return
+    end
+
+    if action == "save" then
+        local newMax = net.ReadFloat()
+        local groupCount = net.ReadUInt(16)
+        local groups = {}
+        for i = 1, groupCount do
+            local name = net.ReadString()
+            local val = net.ReadFloat()
+            if name and name ~= "" then
+                groups[tostring(name)] = math.max(tonumber(val) or 100, 100)
+            end
+        end
+        local playerCount = net.ReadUInt(16)
+        local players = {}
+        for i = 1, playerCount do
+            local sid = net.ReadString()
+            local val = net.ReadFloat()
+            if sid and sid ~= "" then
+                players[tostring(sid)] = math.max(tonumber(val) or 100, 100)
+            end
+        end
+        zb.MaxKarma = math.max(tonumber(newMax) or 150, 100)
+        zb.GroupMaxKarma = groups
+        zb.PlayerMaxKarma = players
+        saveKarmaConfig()
+        broadcastKarmaCfgToAdmins()
+
+        ply:ChatPrint("[Karma] Settings saved (global max=" .. (zb.MaxKarma) .. ", groups=" .. table.Count(zb.GroupMaxKarma) .. ", players=" .. table.Count(zb.PlayerMaxKarma) .. "). File written to data/" .. KARMA_CFG_PATH)
+        return
+    end
+
+    if action == "reset" then
+        zb.MaxKarma = 150
+        zb.GroupMaxKarma = {}
+        zb.PlayerMaxKarma = {}
+        saveKarmaConfig()
+        broadcastKarmaCfgToAdmins()
+        ply:ChatPrint("[Karma] Settings reset to defaults (MaxKarma=150, no group/player overrides).")
         return
     end
 end)
@@ -678,7 +888,7 @@ net.Receive("forgive_player", function(len, ply)
     local harm = zb.HarmDoneKarma[ply][ent]
     if not harm then return end
 
-    ent.Karma = math.Clamp(ent.Karma + harm, 0, zb.MaxKarma)
+    ent.Karma = math.Clamp(ent.Karma + harm, 0, karmaGetMaxForPlayer(ent))
     ent:SetNetVar("Karma",ent.Karma)
     //ent:guilt_SetValue((ent.Karma or 100))
 

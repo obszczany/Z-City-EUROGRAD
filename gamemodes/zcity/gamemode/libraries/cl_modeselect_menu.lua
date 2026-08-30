@@ -8,6 +8,46 @@ if CLIENT then
     local queuePanelInstance = nil 
     local selectedModes = {}
 
+    local karmaCfgCache = {
+        MaxKarma = tonumber(zb and zb.MaxKarma or 150),
+        GroupMaxKarma = istable(zb and zb.GroupMaxKarma) and table.Copy(zb.GroupMaxKarma) or {},
+        PlayerMaxKarma = istable(zb and zb.PlayerMaxKarma) and table.Copy(zb.PlayerMaxKarma) or {}
+    }
+    local karmaCfgSyncedOnce = false
+    local karmaCfgOpenPanel = nil
+
+    net.Receive("hg_admin_karma_settings", function()
+        local act = net.ReadString()
+        if act ~= "sync" then return end
+        local maxK = tonumber(net.ReadFloat()) or 150
+        local n = net.ReadUInt(16)
+        local groups = {}
+        for i = 1, n do
+            local g = net.ReadString()
+            local v = tonumber(net.ReadFloat()) or 150
+            if g and g ~= "" then groups[g] = v end
+        end
+        local np = net.ReadUInt(16)
+        local players = {}
+        for i = 1, np do
+            local s = net.ReadString()
+            local v = tonumber(net.ReadFloat()) or 150
+            if s and s ~= "" then players[s] = v end
+        end
+        karmaCfgCache.MaxKarma = maxK
+        karmaCfgCache.GroupMaxKarma = groups
+        karmaCfgCache.PlayerMaxKarma = players
+        karmaCfgSyncedOnce = true
+        if zb then
+            zb.MaxKarma = maxK
+            zb.GroupMaxKarma = table.Copy(groups)
+            zb.PlayerMaxKarma = table.Copy(players)
+        end
+        if IsValid(karmaCfgOpenPanel) and karmaCfgOpenPanel.RefreshFromCache then
+            karmaCfgOpenPanel:RefreshFromCache()
+        end
+    end)
+
     net.Receive("ZB_SendModesInfo", function()
         zb.availableModes = net.ReadTable()
     end)
@@ -485,6 +525,7 @@ if CLIENT then
         local selectedTargetMode = "player"
         local selectedPlayer = nil
         local maxKarma = zb and zb.MaxKarma or 100
+        local hideAnnouncements = false
 
         local top = vgui.Create("DPanel", frame)
         top:Dock(TOP)
@@ -498,6 +539,7 @@ if CLIENT then
         targetMode:SetTall(24)
         targetMode:SetValue("Target: Selected player")
         targetMode:AddChoice("Target: Selected player", "player", true)
+        targetMode:AddChoice("Target: Yourself", "self", false)
         targetMode:AddChoice("Target: All players", "all", false)
         targetMode:AddChoice("Target: None", "none", false)
         targetMode.OnSelect = function(_, _, _, data)
@@ -522,7 +564,18 @@ if CLIENT then
 
             for _, p in ipairs(players) do
                 if not IsValid(p) or p:IsBot() then continue end
-                playerSelect:AddChoice(p:Nick() .. " (" .. p:SteamID64() .. ")", p)
+                local k = p:GetNetVar("Karma") or p.Karma or 0
+                local pMax = 150
+                if karmaGetMaxForPlayer then
+                    pMax = karmaGetMaxForPlayer(p)
+                elseif zb and zb.GroupMaxKarma and p.GetUserGroup then
+                    local grp = p:GetUserGroup()
+                    pMax = tonumber((zb.GroupMaxKarma or {})[grp]) or tonumber(zb.MaxKarma) or 150
+                elseif zb and zb.MaxKarma then
+                    pMax = tonumber(zb.MaxKarma) or 150
+                end
+                local label = string.format("%s (%s) — %s / %s", p:Nick(), p:SteamID64(), tostring(math.Round(tonumber(k) or 0)), tostring(pMax))
+                playerSelect:AddChoice(label, p)
             end
         end
 
@@ -534,6 +587,19 @@ if CLIENT then
         bottomRow:SetTall(32)
         bottomRow.Paint = nil
 
+        local toggleBtn = vgui.Create("DButton", bottomRow)
+        toggleBtn:Dock(RIGHT)
+        toggleBtn:SetWide(150)
+        toggleBtn:DockMargin(0, 0, 6, 0)
+        toggleBtn:SetText("Toggle Karma System")
+        StyleElement(toggleBtn)
+        toggleBtn.DoClick = function()
+            net.Start("hg_admin_karma")
+                net.WriteString("toggle")
+                net.WriteBool(hideAnnouncements)
+            net.SendToServer()
+        end
+
         local refreshBtn = vgui.Create("DButton", bottomRow)
         refreshBtn:Dock(RIGHT)
         refreshBtn:SetWide(140)
@@ -541,6 +607,17 @@ if CLIENT then
         StyleElement(refreshBtn)
         refreshBtn.DoClick = function()
             refreshPlayers()
+        end
+
+        local hideChk = vgui.Create("DCheckBoxLabel", bottomRow)
+        hideChk:Dock(LEFT)
+        hideChk:SetText("Hide announcements")
+        hideChk:SetConVar("")
+        hideChk:SetValue(false)
+        hideChk:SizeToContents()
+        hideChk:DockMargin(4, 6, 0, 6)
+        hideChk.OnChange = function(_, val)
+            hideAnnouncements = val
         end
 
         local scroll = vgui.Create("DScrollPanel", frame)
@@ -576,11 +653,23 @@ if CLIENT then
             if not value then return end
             value = math.Clamp(value, -60, maxKarma)
 
+            if mode == "self" then
+                net.Start("hg_admin_karma")
+                    net.WriteString("set")
+                    net.WriteBool(false)
+                    net.WriteFloat(value)
+                    net.WriteEntity(LocalPlayer())
+                    net.WriteBool(hideAnnouncements)
+                net.SendToServer()
+                return
+            end
+
             if mode == "all" then
                 net.Start("hg_admin_karma")
                     net.WriteString("set")
                     net.WriteBool(true)
                     net.WriteFloat(value)
+                    net.WriteBool(hideAnnouncements)
                 net.SendToServer()
                 return
             end
@@ -590,8 +679,9 @@ if CLIENT then
             net.Start("hg_admin_karma")
                 net.WriteString("set")
                 net.WriteBool(false)
-                net.WriteEntity(ent)
                 net.WriteFloat(value)
+                net.WriteEntity(ent)
+                net.WriteBool(hideAnnouncements)
             net.SendToServer()
         end
 
@@ -599,10 +689,21 @@ if CLIENT then
             local mode = getTargetMode()
             if mode == "none" then return end
 
+            if mode == "self" then
+                net.Start("hg_admin_karma")
+                    net.WriteString("reset")
+                    net.WriteBool(false)
+                    net.WriteEntity(LocalPlayer())
+                    net.WriteBool(hideAnnouncements)
+                net.SendToServer()
+                return
+            end
+
             if mode == "all" then
                 net.Start("hg_admin_karma")
                     net.WriteString("reset")
                     net.WriteBool(true)
+                    net.WriteBool(hideAnnouncements)
                 net.SendToServer()
                 return
             end
@@ -613,6 +714,7 @@ if CLIENT then
                 net.WriteString("reset")
                 net.WriteBool(false)
                 net.WriteEntity(ent)
+                net.WriteBool(hideAnnouncements)
             net.SendToServer()
         end
 
@@ -635,18 +737,12 @@ if CLIENT then
             applySetKarma(maxKarma)
         end)
 
-        addActionButton("Reset (100)", function()
+        addActionButton("Reset (" .. tostring(maxKarma) .. ")", function()
             applyResetKarma()
         end)
 
         addActionButton("Set To 0 (Ban risk)", function()
             applySetKarma(0)
-        end)
-
-        addActionButton("Toggle Karma On/Off", function()
-            net.Start("hg_admin_karma")
-                net.WriteString("toggle")
-            net.SendToServer()
         end)
 
         local function updateEnabled()
@@ -657,6 +753,500 @@ if CLIENT then
         end
 
         updateEnabled()
+    end
+
+    local function OpenKarmaSettingsMenu()
+        if IsValid(karmaCfgOpenPanel) then
+            karmaCfgOpenPanel:Close()
+        end
+
+        local frame = vgui.Create("ZFrame")
+        frame:SetSize(650, 640)
+        frame:Center()
+        frame:SetTitle("Karma Settings")
+        frame:MakePopup()
+        karmaCfgOpenPanel = frame
+
+        frame.OnClose = function()
+            if karmaCfgOpenPanel == frame then
+                karmaCfgOpenPanel = nil
+            end
+        end
+
+        local editing = {
+            MaxKarma = tonumber(karmaCfgCache.MaxKarma) or 150,
+            Groups = table.Copy(karmaCfgCache.GroupMaxKarma or {}),
+            Players = table.Copy(karmaCfgCache.PlayerMaxKarma or {})
+        }
+
+        -- Top People Karma
+        local top = vgui.Create("DPanel", frame)
+        top:Dock(TOP)
+        top:DockMargin(8, 8, 8, 6)
+        top:SetTall(72)
+        StyleElement(top, Color(30, 30, 30, 200))
+
+        local row1 = vgui.Create("DPanel", top)
+        row1:Dock(TOP)
+        row1:SetTall(32)
+        row1:DockMargin(0, 6, 0, 2)
+        row1.Paint = nil
+
+        local lbl = vgui.Create("DLabel", row1)
+        lbl:Dock(LEFT)
+        lbl:DockMargin(12, 6, 8, 6)
+        lbl:SetWide(150)
+        lbl:SetText("Global Max Karma:")
+        lbl:SetTextColor(Color(235, 235, 235))
+
+        local maxEntry = vgui.Create("DTextEntry", row1)
+        maxEntry:Dock(LEFT)
+        maxEntry:SetWide(100)
+        maxEntry:DockMargin(0, 2, 8, 2)
+        maxEntry:SetText(tostring(editing.MaxKarma))
+        maxEntry:SetNumeric(true)
+        maxEntry:SetUpdateOnType(true)
+        maxEntry.OnChange = function(self)
+            editing.MaxKarma = tonumber(self:GetValue()) or editing.MaxKarma
+        end
+
+        local info = vgui.Create("DLabel", top)
+        info:Dock(TOP)
+        info:DockMargin(14, 2, 12, 4)
+        info:SetTall(18)
+        info:SetText("Priority order: Player-Specific → ULX Group → Global default.")
+        info:SetTextColor(Color(185, 185, 185))
+
+        -- ====================
+        -- SECTION 1: Groups (scrollable)
+        -- ====================
+        local groupsWrap = vgui.Create("DPanel", frame)
+        groupsWrap:Dock(TOP)
+        groupsWrap:DockMargin(8, 0, 8, 6)
+        groupsWrap:SetTall(200)
+        groupsWrap.Paint = nil
+
+        local groupsHeader = vgui.Create("DPanel", groupsWrap)
+        groupsHeader:Dock(TOP)
+        groupsHeader:SetTall(30)
+        groupsHeader.Paint = nil
+
+        local ghLbl = vgui.Create("DLabel", groupsHeader)
+        ghLbl:Dock(LEFT)
+        ghLbl:DockMargin(4, 6, 8, 4)
+        ghLbl:SetWide(260)
+        ghLbl:SetText("ULX Group Max Karma Overrides:")
+        ghLbl:SetTextColor(Color(230, 230, 230))
+
+        local addGroupBtn = vgui.Create("DButton", groupsHeader)
+        addGroupBtn:Dock(RIGHT)
+        addGroupBtn:SetWide(100)
+        addGroupBtn:DockMargin(4, 2, 4, 2)
+        addGroupBtn:SetText("+ Add Group")
+        StyleElement(addGroupBtn)
+
+        local groupsScroll = vgui.Create("DScrollPanel", groupsWrap)
+        groupsScroll:Dock(FILL)
+        groupsScroll:DockMargin(0, 2, 0, 0)
+        StyleElement(groupsScroll, Color(30, 30, 30, 200))
+
+        local function rebuildGroupRows()
+            groupsScroll:Clear()
+            local sorted = {}
+            for g, v in pairs(editing.Groups) do table.insert(sorted, {g, v}) end
+            table.sort(sorted, function(a, b) return string.lower(a[1]) < string.lower(b[1]) end)
+            for _, row in ipairs(sorted) do
+                local grpName, grpVal = row[1], row[2]
+                local r = vgui.Create("DPanel", groupsScroll)
+                r:Dock(TOP)
+                r:DockMargin(8, 6, 8, 0)
+                r:SetTall(32)
+                r.Paint = nil
+
+                local nameEntry = vgui.Create("DTextEntry", r)
+                nameEntry:Dock(LEFT)
+                nameEntry:SetWide(230)
+                nameEntry:DockMargin(0, 2, 6, 2)
+                nameEntry:SetText(grpName)
+                nameEntry:SetPlaceholderText("group name (e.g. superadmin)")
+                nameEntry.OnChange = function(self)
+                    local new = self:GetValue()
+                    if new == grpName then return end
+                    editing.Groups[grpName] = nil
+                    grpName = new
+                    if new and new ~= "" then
+                        editing.Groups[new] = tonumber(grpVal) or 150
+                    end
+                end
+
+                local valEntry = vgui.Create("DTextEntry", r)
+                valEntry:Dock(LEFT)
+                valEntry:SetWide(110)
+                valEntry:DockMargin(0, 2, 6, 2)
+                valEntry:SetText(tostring(grpVal))
+                valEntry:SetNumeric(true)
+                valEntry:SetPlaceholderText("max karma")
+                valEntry.OnChange = function(self)
+                    local v = tonumber(self:GetValue()) or 150
+                    grpVal = v
+                    if grpName and grpName ~= "" then editing.Groups[grpName] = v end
+                end
+
+                local del = vgui.Create("DButton", r)
+                del:Dock(LEFT)
+                del:SetWide(70)
+                del:DockMargin(0, 2, 0, 2)
+                del:SetText("Remove")
+                StyleElement(del)
+                del.DoClick = function()
+                    editing.Groups[grpName] = nil
+                    rebuildGroupRows()
+                end
+            end
+        end
+
+        addGroupBtn.DoClick = function()
+            local freeName = "newgroup"
+            local i = 1
+            while editing.Groups[freeName] do
+                freeName = "newgroup" .. i
+                i = i + 1
+            end
+            editing.Groups[freeName] = 150
+            rebuildGroupRows()
+        end
+
+        rebuildGroupRows()
+
+        -- ====================
+        -- SECTION 2: Players (scrollable + add by SteamID OR by online player)
+        -- ====================
+        local playersWrap = vgui.Create("DPanel", frame)
+        playersWrap:Dock(FILL)
+        playersWrap:DockMargin(8, 0, 8, 6)
+        playersWrap.Paint = nil
+
+        local playersHeader = vgui.Create("DPanel", playersWrap)
+        playersHeader:Dock(TOP)
+        playersHeader:SetTall(64)
+        playersHeader.Paint = nil
+
+        local phRow1 = vgui.Create("DPanel", playersHeader)
+        phRow1:Dock(TOP)
+        phRow1:SetTall(30)
+        phRow1.Paint = nil
+
+        local phLbl = vgui.Create("DLabel", phRow1)
+        phLbl:Dock(LEFT)
+        phLbl:DockMargin(4, 6, 8, 4)
+        phLbl:SetWide(280)
+        phLbl:SetText("Player-Specific Max Karma Overrides:")
+        phLbl:SetTextColor(Color(230, 230, 230))
+
+        local addPlayerBtn = vgui.Create("DButton", phRow1)
+        addPlayerBtn:Dock(RIGHT)
+        addPlayerBtn:SetWide(140)
+        addPlayerBtn:DockMargin(4, 2, 4, 2)
+        addPlayerBtn:SetText("+ Add by SteamID…")
+        StyleElement(addPlayerBtn)
+
+        local onlineBtn = vgui.Create("DButton", phRow1)
+        onlineBtn:Dock(RIGHT)
+        onlineBtn:SetWide(160)
+        onlineBtn:DockMargin(4, 2, 4, 2)
+        onlineBtn:SetText("Select Online Player…")
+        StyleElement(onlineBtn)
+
+        local phRow2 = vgui.Create("DPanel", playersHeader)
+        phRow2:Dock(TOP)
+        phRow2:DockMargin(0, 4, 0, 0)
+        phRow2:SetTall(26)
+        phRow2.Paint = nil
+
+        local col1 = vgui.Create("DLabel", phRow2)
+        col1:Dock(LEFT)
+        col1:DockMargin(8, 4, 8, 4)
+        col1:SetWide(230)
+        col1:SetText("SteamID64 (or pick online player)")
+        col1:SetTextColor(Color(200, 200, 200))
+
+        local col2 = vgui.Create("DLabel", phRow2)
+        col2:Dock(LEFT)
+        col2:DockMargin(0, 4, 8, 4)
+        col2:SetWide(110)
+        col2:SetText("Max Karma")
+        col2:SetTextColor(Color(200, 200, 200))
+
+        local playersScroll = vgui.Create("DScrollPanel", playersWrap)
+        playersScroll:Dock(FILL)
+        playersScroll:DockMargin(0, 4, 0, 0)
+        StyleElement(playersScroll, Color(30, 30, 30, 200))
+
+        local function playerLabelForSid(sid)
+            local nick = nil
+            for _, p in ipairs(player.GetHumans()) do
+                if IsValid(p) and p.SteamID64 and p:SteamID64() == sid then
+                    nick = p:Nick()
+                    break
+                end
+            end
+            return nick and string.format("%s (%s)", nick, sid) or sid
+        end
+
+        local function rebuildPlayerRows()
+            playersScroll:Clear()
+            local sorted = {}
+            for s, v in pairs(editing.Players) do table.insert(sorted, {s, v}) end
+            table.sort(sorted, function(a, b) return playerLabelForSid(a[1]) < playerLabelForSid(b[1]) end)
+            for _, row in ipairs(sorted) do
+                local sid, pVal = row[1], row[2]
+                local r = vgui.Create("DPanel", playersScroll)
+                r:Dock(TOP)
+                r:DockMargin(8, 6, 8, 0)
+                r:SetTall(32)
+                r.Paint = nil
+
+                local sidEntry = vgui.Create("DTextEntry", r)
+                sidEntry:Dock(LEFT)
+                sidEntry:SetWide(230)
+                sidEntry:DockMargin(0, 2, 6, 2)
+                sidEntry:SetText(sid)
+                sidEntry:SetPlaceholderText("SteamID64")
+                sidEntry.OnChange = function(self)
+                    local new = self:GetValue()
+                    if new == sid then return end
+                    editing.Players[sid] = nil
+                    sid = new
+                    if new and new ~= "" then
+                        editing.Players[new] = tonumber(pVal) or 150
+                    end
+                end
+                -- Show the player's nick (if online) in tooltip for quick verification
+                local nickShown = nil
+                for _, p in ipairs(player.GetHumans()) do
+                    if IsValid(p) and p.SteamID64 and p:SteamID64() == sid then
+                        nickShown = p:Nick()
+                        break
+                    end
+                end
+                if nickShown then
+                    sidEntry:SetTooltip("Currently online as: " .. nickShown)
+                end
+
+                local valEntry = vgui.Create("DTextEntry", r)
+                valEntry:Dock(LEFT)
+                valEntry:SetWide(110)
+                valEntry:DockMargin(0, 2, 6, 2)
+                valEntry:SetText(tostring(pVal))
+                valEntry:SetNumeric(true)
+                valEntry:SetPlaceholderText("max karma")
+                valEntry.OnChange = function(self)
+                    local v = tonumber(self:GetValue()) or 150
+                    pVal = v
+                    if sid and sid ~= "" then editing.Players[sid] = v end
+                end
+
+                local del = vgui.Create("DButton", r)
+                del:Dock(LEFT)
+                del:SetWide(70)
+                del:DockMargin(0, 2, 0, 2)
+                del:SetText("Remove")
+                StyleElement(del)
+                del.DoClick = function()
+                    editing.Players[sid] = nil
+                    rebuildPlayerRows()
+                end
+            end
+        end
+
+        addPlayerBtn.DoClick = function()
+            Derma_StringRequest(
+                "Add Player Karma Override",
+                "Enter the player's SteamID64 (or SteamID — will be converted):",
+                "76561198000000000",
+                function(text)
+                    local raw = string.Trim(text or "")
+                    if raw == "" then return end
+                    -- Accept STEAM_0 or modern SteamID and convert to SteamID64 if possible
+                    local sid64 = raw
+                    if string.StartWith(string.lower(raw), "steam_") then
+                        if util.SteamIDTo64 then
+                            local c = util.SteamIDTo64(raw)
+                            if c and c ~= "" and c ~= "0" then sid64 = c end
+                        end
+                    end
+                    if editing.Players[sid64] then
+                        Derma_Message("This player is already in the list. Edit the existing row instead.", "Already Added", "OK")
+                        return
+                    end
+                    editing.Players[sid64] = 150
+                    rebuildPlayerRows()
+                end,
+                function() end,
+                "Add",
+                "Cancel"
+            )
+        end
+
+        onlineBtn.DoClick = function()
+            -- Show panel of current connected idiots here
+            local pm = vgui.Create("ZFrame")
+            pm:SetSize(520, 380)
+            pm:Center()
+            pm:SetTitle("Select Online Player")
+            pm:MakePopup()
+
+            local list = vgui.Create("DListView", pm)
+            list:Dock(FILL)
+            list:DockMargin(8, 8, 8, 6)
+            list:AddColumn("Name"):SetFixedWidth(200)
+            list:AddColumn("SteamID64")
+            list:AddColumn("Group"):SetFixedWidth(100)
+            StyleElement(list, Color(30, 30, 30, 200))
+
+            local humans = player.GetHumans()
+            table.sort(humans, function(a, b) return string.lower(a:Nick()) < string.lower(b:Nick()) end)
+            for _, p in ipairs(humans) do
+                if IsValid(p) and p.SteamID64 then
+                    local sid64 = p:SteamID64() or ""
+                    local grp = (p.GetUserGroup and p:GetUserGroup()) or ""
+                    local line = list:AddLine(p:Nick(), sid64, grp)
+                    line.SteamID64 = sid64
+                    line.Player = p
+                end
+            end
+
+            local btns = vgui.Create("DPanel", pm)
+            btns:Dock(BOTTOM)
+            btns:DockMargin(8, 0, 8, 8)
+            btns:SetTall(34)
+            btns.Paint = nil
+
+            local cancel = vgui.Create("DButton", btns)
+            cancel:Dock(RIGHT)
+            cancel:SetWide(100)
+            cancel:DockMargin(4, 2, 4, 2)
+            cancel:SetText("Cancel")
+            StyleElement(cancel)
+            cancel.DoClick = function() pm:Close() end
+
+            local pick = vgui.Create("DButton", btns)
+            pick:Dock(RIGHT)
+            pick:SetWide(120)
+            pick:DockMargin(4, 2, 4, 2)
+            pick:SetText("Add Selected")
+            StyleElement(pick)
+
+            local function doPick()
+                local linePanel = nil
+                local selLines = list:GetSelected()
+                if istable(selLines) and #selLines >= 1 then
+                    for _, l in ipairs(selLines) do
+                        if ispanel(l) and l.SteamID64 then
+                            linePanel = l
+                            break
+                        end
+                    end
+                end
+                if not ispanel(linePanel) or not linePanel.SteamID64 then return end
+                local sid64 = linePanel.SteamID64
+                if editing.Players[sid64] then
+                    Derma_Message("This player is already in the list. Edit the existing row instead.", "Already Added", "OK")
+                    return
+                end
+                editing.Players[sid64] = 150
+                rebuildPlayerRows()
+                pm:Close()
+            end
+            pick.DoClick = doPick
+            list.DoDoubleClick = function(self, lineID, line)
+                if ispanel(line) and line.SteamID64 then
+                    list:SelectItem(line)
+                    doPick()
+                end
+            end
+        end
+
+        rebuildPlayerRows()
+
+        function frame:RefreshFromCache()
+            if not IsValid(self) then return end
+            editing.MaxKarma = tonumber(karmaCfgCache.MaxKarma) or 150
+            editing.Groups = table.Copy(karmaCfgCache.GroupMaxKarma or {})
+            editing.Players = table.Copy(karmaCfgCache.PlayerMaxKarma or {})
+            if IsValid(maxEntry) then
+                maxEntry:SetText(tostring(editing.MaxKarma))
+            end
+            rebuildGroupRows()
+            rebuildPlayerRows()
+        end
+
+        -- Bottom: Save / Reset
+        local bottom = vgui.Create("DPanel", frame)
+        bottom:Dock(BOTTOM)
+        bottom:DockMargin(8, 0, 8, 8)
+        bottom:SetTall(36)
+        bottom.Paint = nil
+
+        local resetBtn = vgui.Create("DButton", bottom)
+        resetBtn:Dock(LEFT)
+        resetBtn:SetWide(160)
+        resetBtn:DockMargin(0, 0, 6, 0)
+        resetBtn:SetText("Reset to Defaults")
+        StyleElement(resetBtn)
+        resetBtn.DoClick = function()
+            Derma_Query("Reset ALL karma settings to defaults? (MaxKarma=150, clear group & player overrides)",
+                "Confirm Reset",
+                "Reset All", function()
+                    net.Start("hg_admin_karma_settings")
+                        net.WriteString("reset")
+                    net.SendToServer()
+                end,
+                "Cancel", function() end)
+        end
+
+        local saveBtn = vgui.Create("DButton", bottom)
+        saveBtn:Dock(RIGHT)
+        saveBtn:SetWide(160)
+        saveBtn:SetText("Save Changes")
+        StyleElement(saveBtn)
+        saveBtn.DoClick = function()
+            local newMax = math.max(tonumber(editing.MaxKarma) or 150, 100)
+            local cleanedGroups = {}
+            for g, v in pairs(editing.Groups) do
+                if g and g ~= "" then
+                    cleanedGroups[tostring(g)] = math.max(tonumber(v) or 150, 100)
+                end
+            end
+            local cleanedPlayers = {}
+            for s, v in pairs(editing.Players) do
+                if s and s ~= "" then
+                    cleanedPlayers[tostring(s)] = math.max(tonumber(v) or 150, 100)
+                end
+            end
+            net.Start("hg_admin_karma_settings")
+                net.WriteString("save")
+                net.WriteFloat(newMax)
+                local gkeys = table.GetKeys(cleanedGroups)
+                net.WriteUInt(#gkeys, 16)
+                for _, g in ipairs(gkeys) do
+                    net.WriteString(tostring(g))
+                    net.WriteFloat(tonumber(cleanedGroups[g]) or 150)
+                end
+                local pkeys = table.GetKeys(cleanedPlayers)
+                net.WriteUInt(#pkeys, 16)
+                for _, s in ipairs(pkeys) do
+                    net.WriteString(tostring(s))
+                    net.WriteFloat(tonumber(cleanedPlayers[s]) or 150)
+                end
+            net.SendToServer()
+        end
+
+        if not karmaCfgSyncedOnce then
+            net.Start("hg_admin_karma_settings")
+                net.WriteString("request")
+            net.SendToServer()
+        end
     end
 
     local function OpenModeChancesMenu()
@@ -925,6 +1515,29 @@ if CLIENT then
         karmaBtn.DoClick = function()
             OpenKarmaMenu()
         end
+
+        local karmaGearBtn = vgui.Create("DImageButton", karmaBtn)
+        karmaGearBtn:SetSize(16, 16)
+        karmaGearBtn:SetImage("icon16/cog.png")
+        karmaGearBtn:SetTooltip("Karma settings: global max & per-group caps")
+        karmaGearBtn.DoClick = function()
+            OpenKarmaSettingsMenu()
+        end
+        karmaGearBtn.Paint = function(self, w, h)
+            if self:IsHovered() then
+                surface.SetDrawColor(255, 255, 255, 30)
+                surface.DrawRect(0, 0, w, h)
+            end
+        end
+        local oldKarmaPerformLayout = karmaBtn.PerformLayout
+        karmaBtn.PerformLayout = function(self)
+            if oldKarmaPerformLayout then
+                oldKarmaPerformLayout(self)
+            end
+            local w, h = self:GetSize()
+            karmaGearBtn:SetPos(w - 26, math.floor((h - 16) / 2))
+        end
+        karmaBtn:InvalidateLayout(true)
 
         local endRoundBtn = vgui.Create("DButton", frame)
         endRoundBtn:SetText("End Round")
