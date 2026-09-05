@@ -20,10 +20,12 @@ end
 local function LoadFromDir(directory)
 	local files, folders = file.Find(directory .. "/*", "LUA")
 
+	table.sort(folders)
 	for _, v in ipairs(folders) do
 		LoadFromDir(directory .. "/" .. v)
 	end
 
+	table.sort(files)
 	for _, v in ipairs(files) do
 		IncluderFunc(directory .. "/" .. v)
 	end

@@ -1,6 +1,6 @@
 zb = zb or {}
 zb.MaximumHarm = 10
-zb.MaxKarma = 150
+zb.MaxKarma = zb.MaxKarma or 150
 zb.GroupMaxKarma = zb.GroupMaxKarma or {}
 zb.PlayerMaxKarma = zb.PlayerMaxKarma or {}
 

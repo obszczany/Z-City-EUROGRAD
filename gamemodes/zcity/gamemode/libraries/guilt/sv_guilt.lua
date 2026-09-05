@@ -117,45 +117,88 @@ local function karmaResetValue(targetPly)
     return zb.MaxKarma or 150
 end
 
-local KARMA_CFG_PATH = "zcity/karma_config.json"
+KARMA_CFG_PATH = "zcity/karma_config.json"
 
-local function saveKarmaConfig()
+function saveKarmaConfig()
     local data = {
-        MaxKarma = zb.MaxKarma or 150,
+        MaxKarma = tonumber(zb.MaxKarma) or 150,
         GroupMaxKarma = zb.GroupMaxKarma or {},
         PlayerMaxKarma = zb.PlayerMaxKarma or {}
     }
     if not file.IsDir("zcity", "DATA") then
         file.CreateDir("zcity")
     end
-    file.Write(KARMA_CFG_PATH, util.TableToJSON(data, true))
-end
-
-local function loadKarmaConfig()
-    if file.Exists(KARMA_CFG_PATH, "DATA") then
-        local raw = file.Read(KARMA_CFG_PATH, "DATA")
-        if raw and raw ~= "" then
-            local ok, data = pcall(util.JSONToTable, raw)
-            if ok and istable(data) then
-                if data.MaxKarma then zb.MaxKarma = tonumber(data.MaxKarma) or zb.MaxKarma end
-                if istable(data.GroupMaxKarma) then
-                    zb.GroupMaxKarma = {}
-                    for g, v in pairs(data.GroupMaxKarma) do
-                        zb.GroupMaxKarma[tostring(g)] = tonumber(v)
-                    end
-                end
-                if istable(data.PlayerMaxKarma) then
-                    zb.PlayerMaxKarma = {}
-                    for s, v in pairs(data.PlayerMaxKarma) do
-                        zb.PlayerMaxKarma[tostring(s)] = tonumber(v)
-                    end
-                end
-            end
-        end
+    local ok, err = pcall(function()
+        file.Write(KARMA_CFG_PATH, util.TableToJSON(data, true))
+    end)
+    if ok then
+        ServerLog("[Karma] Saved config to data/" .. KARMA_CFG_PATH .. " (MaxKarma=" .. data.MaxKarma ..
+            ", groups=" .. table.Count(data.GroupMaxKarma) ..
+            ", players=" .. table.Count(data.PlayerMaxKarma) .. ")\n")
+    else
+        ServerLog("[Karma] FAILED to save config: " .. tostring(err) .. "\n")
     end
 end
 
+function loadKarmaConfig()
+    if not file.Exists(KARMA_CFG_PATH, "DATA") then
+        ServerLog("[Karma] No saved config at data/" .. KARMA_CFG_PATH .. " — using defaults (MaxKarma=150)\n")
+        return
+    end
+    local raw = file.Read(KARMA_CFG_PATH, "DATA")
+    if not raw or raw == "" then
+        ServerLog("[Karma] Config file is empty, using defaults.\n")
+        return
+    end
+    local ok, data = pcall(util.JSONToTable, raw)
+    if not ok or not istable(data) then
+        ServerLog("[Karma] Failed to parse karma_config.json: " .. tostring(data) .. "\n")
+        return
+    end
+    if data.MaxKarma then zb.MaxKarma = math.max(tonumber(data.MaxKarma) or 150, 100) end
+    zb.GroupMaxKarma = {}
+    if istable(data.GroupMaxKarma) then
+        for g, v in pairs(data.GroupMaxKarma) do
+            local num = tonumber(v)
+            if num then zb.GroupMaxKarma[tostring(g)] = math.max(num, 100) end
+        end
+    end
+    zb.PlayerMaxKarma = {}
+    if istable(data.PlayerMaxKarma) then
+        for s, v in pairs(data.PlayerMaxKarma) do
+            local num = tonumber(v)
+            if num then zb.PlayerMaxKarma[tostring(s)] = math.max(num, 100) end
+        end
+    end
+    ServerLog("[Karma] Loaded config (MaxKarma=" .. (zb.MaxKarma or 150) ..
+        ", groups=" .. table.Count(zb.GroupMaxKarma) ..
+        ", players=" .. table.Count(zb.PlayerMaxKarma) .. ")\n")
+end
+
 loadKarmaConfig()
+
+concommand.Add("zb_karma_config_reload", function(ply)
+    if IsValid(ply) and not ply:IsAdmin() then return end
+    loadKarmaConfig()
+    if IsValid(ply) then ply:ChatPrint("[Karma] Re-loaded config from disk.") end
+end)
+
+concommand.Add("zb_karma_config_testwrite", function(ply)
+    if IsValid(ply) and not ply:IsAdmin() then return end
+    saveKarmaConfig()
+    if IsValid(ply) then ply:ChatPrint("[Karma] Test-wrote config. Check server console for OK/FAIL.") end
+end)
+
+if SERVER then
+    hook.Add("InitPostEntity", "karma_config_load_initpost", function()
+        loadKarmaConfig()
+        saveKarmaConfig()
+    end)
+
+    hook.Add("ShutDown", "karma_config_autosave_shutdown", function()
+        saveKarmaConfig()
+    end)
+end
 
 util.AddNetworkString("hg_admin_karma_settings")
 local function broadcastKarmaCfgToAdmins()
