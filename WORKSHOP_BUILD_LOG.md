@@ -50,7 +50,8 @@ in the final section.
 
 - `lua/autorun/client/cl_eurograd_finisher_prompt.lua`: independently written
   availability detector, blinking red prompt and `[E]` input adapter for
-  Manhunt Executions.
+  Manhunt Executions. `eurograd_finisher_preview` displays a six-second theme
+  preview without requiring a target.
 - `lua/initpost/menu-n-derma/derma/cl_menu_options.lua`: execution-prompt and
   player-render settings inside the native Esc options UI.
 - `lua/playercase/client/cl_theme.lua`: `Fonts.Finisher` and `Colors.Finisher`

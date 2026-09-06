@@ -4,6 +4,11 @@
 local enabled = CreateClientConVar("eurograd_finisher_prompt", "1", true, false, "Show the EUROGRAD execution prompt", 0, 1)
 local executeKey = KEY_E
 local rangeSqr = 200 * 200
+local previewUntil = 0
+
+concommand.Add("eurograd_finisher_preview", function()
+	previewUntil = CurTime() + 6
+end)
 
 local function themeValue(group, key, fallback)
 	local theme = CASE_ZCITY_THEME or {}
@@ -89,7 +94,7 @@ local function canExecute()
 end
 
 hook.Add("HUDPaint", "Eurograd.FinisherPrompt", function()
-	local available = canExecute()
+	local available = previewUntil > CurTime() or canExecute()
 	if not available then return end
 
 	local pulse = 0.5 + 0.5 * math.abs(math.sin(CurTime() * 7.5))
