@@ -9,6 +9,10 @@ and Z-City equipment/armour preview in one repository. See
 [UNIFIED_INVENTORY.md](UNIFIED_INVENTORY.md) for controls and the single-file
 theme/branding configuration.
 
+The community build's requested Workshop packages, asset audit and optional
+compatibility/performance profiles are documented in
+[WORKSHOP_BUILD_LOG.md](WORKSHOP_BUILD_LOG.md).
+
 ## Support Z-City
 **Donation links:**
 - [Yoomoney](https://yoomoney.ru/fundraise/17GFEQH326Q.250101) 

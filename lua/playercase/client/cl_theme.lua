@@ -19,7 +19,8 @@ CASE_ZCITY_THEME = {
 
 	Fonts = {
 		Interface = "Roboto",
-		Character = "Bahnschrift"
+		Character = "Bahnschrift",
+		Finisher = "Impact"
 	},
 
 	Colors = {
@@ -29,6 +30,7 @@ CASE_ZCITY_THEME = {
 		PrimarySoft = {69, 157, 255, 205},
 		Secondary = {230, 72, 132, 220},
 		Danger = {244, 83, 93, 235},
+		Finisher = {255, 24, 36, 255},
 		Panel = {13, 18, 28, 178},
 		Border = {185, 199, 215, 80}
 	}
