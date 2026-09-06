@@ -5,3 +5,26 @@
 /shaders
 /sound
 .vscode
+
+# The unified inventory is intentionally self-contained in this fork.
+!/materials/
+/materials/*
+!/materials/caseicons/
+!/materials/caseicons/**
+!/materials/vgui/
+/materials/vgui/*
+!/materials/vgui/hud/
+/materials/vgui/hud/*
+!/materials/vgui/hud/health_*.png
+!/materials/vgui/hud/status_*.png
+!/resource/
+/resource/*
+!/resource/fonts/
+/resource/fonts/*
+!/resource/fonts/redhatmono-semibold.ttf
+!/sound/
+/sound/*
+!/sound/ui/
+/sound/ui/*
+!/sound/ui/re4case/
+!/sound/ui/re4case/**

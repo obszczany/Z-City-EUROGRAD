@@ -2,6 +2,13 @@
 # Z-CITY EUROGRAD
 Z-City is a GMod addon which modifies character damage and controls. Z-City also comes with its own weapon base and a gamemode
 
+## Unified inventory UI
+
+This fork includes the grid inventory, live Moodles status display, body monitor
+and Z-City equipment/armour preview in one repository. See
+[UNIFIED_INVENTORY.md](UNIFIED_INVENTORY.md) for controls and the single-file
+theme/branding configuration.
+
 ## Support Z-City
 **Donation links:**
 - [Yoomoney](https://yoomoney.ru/fundraise/17GFEQH326Q.250101) 
